@@ -241,7 +241,7 @@ The completed application demonstration is available on YouTube as an Unlisted v
 
 **YouTube Link:**
 
-https://youtu.be/ctqx7Si4BKs
+https://www.youtube.com/watch?v=XtQvsyBMG0Q
 
 ## Author
 
