@@ -1,15 +1,143 @@
-import { useState } from "react";
-
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
+  Image,
   TextInput,
   Pressable,
   StyleSheet,
   ScrollView,
+  Alert,
 } from "react-native";
-
 import { Picker } from "@react-native-picker/picker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+function StatCard({ icon, number, label }) {
+  return (
+    <View style={styles.statCard}>
+      <Text style={styles.statIcon}>{icon}</Text>
+      <Text style={styles.statNumber}>{number}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function DishCard({ dish, onEdit, onDelete }) {
+  return (
+    <View style={styles.dishCard}>
+      <View style={styles.dishTopRow}>
+        <Text style={styles.dishName}>{dish.name}</Text>
+        <Text style={styles.price}>
+          R{Number(dish.price).toFixed(2)}
+        </Text>
+      </View>
+
+      <View style={styles.courseBadge}>
+        <Text style={styles.course}>{dish.course}</Text>
+      </View>
+
+      <Text style={styles.description}>{dish.description}</Text>
+
+      <View style={styles.actionRow}>
+        <Pressable style={styles.editButton} onPress={onEdit}>
+          <Text style={styles.editButtonText}>✏️ Edit</Text>
+        </Pressable>
+
+        <Pressable style={styles.deleteButton} onPress={onDelete}>
+          <Text style={styles.deleteButtonText}>🗑️ Delete</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function DishForm({
+  title,
+  subtitle,
+  icon,
+  dishName,
+  setDishName,
+  description,
+  setDescription,
+  course,
+  setCourse,
+  price,
+  setPrice,
+  error,
+  buttonText,
+  onSubmit,
+  onCancel,
+}) {
+  return (
+    <ScrollView
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.formHeader}>
+        <Text style={styles.emoji}>{icon}</Text>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.formSubtitle}>{subtitle}</Text>
+      </View>
+
+      <View style={styles.formCard}>
+        <Text style={styles.label}>Dish Name</Text>
+
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. Cape Malay Curry"
+          placeholderTextColor="#999"
+          value={dishName}
+          onChangeText={setDishName}
+        />
+
+        <Text style={styles.label}>Description</Text>
+
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="Describe the dish..."
+          placeholderTextColor="#999"
+          value={description}
+          onChangeText={setDescription}
+          multiline
+        />
+
+        <Text style={styles.label}>Course</Text>
+
+        <View style={styles.pickerContainer}>
+          <Picker selectedValue={course} onValueChange={setCourse}>
+            <Picker.Item label="Select a course" value="" />
+            <Picker.Item label="Starter" value="Starter" />
+            <Picker.Item label="Main Course" value="Main Course" />
+            <Picker.Item label="Dessert" value="Dessert" />
+          </Picker>
+        </View>
+
+        <Text style={styles.label}>Price</Text>
+
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. 120.00"
+          placeholderTextColor="#999"
+          value={price}
+          onChangeText={setPrice}
+          keyboardType="decimal-pad"
+        />
+
+        {error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : null}
+
+        <Pressable style={styles.button} onPress={onSubmit}>
+          <Text style={styles.buttonText}>{buttonText}</Text>
+        </Pressable>
+
+        <Pressable style={styles.secondaryButton} onPress={onCancel}>
+          <Text style={styles.secondaryButtonText}>Cancel</Text>
+        </Pressable>
+      </View>
+    </ScrollView>
+  );
+}
 
 export default function App() {
   const [screen, setScreen] = useState("home");
@@ -20,11 +148,49 @@ export default function App() {
   const [price, setPrice] = useState("");
 
   const [dishes, setDishes] = useState([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [searchText, setSearchText] = useState("");
 
-  const [editingIndex, setEditingIndex] = useState(null);
+  const [searchText, setSearchText] = useState("");
+  const [selectedCourse, setSelectedCourse] = useState("All");
+
+  const [editingId, setEditingId] = useState(null);
+
+  useEffect(() => {
+    const loadDishes = async () => {
+      try {
+        const savedDishes = await AsyncStorage.getItem("dishes");
+
+        if (savedDishes !== null) {
+          setDishes(JSON.parse(savedDishes));
+        }
+      } catch (error) {
+        Alert.alert("Error", "Unable to load saved dishes.");
+      } finally {
+        setIsLoaded(true);
+      }
+    };
+
+    loadDishes();
+  }, []);
+
+  useEffect(() => {
+    const saveDishes = async () => {
+      if (!isLoaded) {
+        return;
+      }
+
+      try {
+        await AsyncStorage.setItem("dishes", JSON.stringify(dishes));
+      } catch (error) {
+        Alert.alert("Error", "Unable to save your menu.");
+      }
+    };
+
+    saveDishes();
+  }, [dishes, isLoaded]);
 
   const totalDishes = dishes.length;
 
@@ -40,42 +206,89 @@ export default function App() {
     (dish) => dish.course === "Dessert"
   ).length;
 
-  const addDish = () => {
-    setError("");
-    setSuccess("");
+  const averagePrice =
+    totalDishes === 0
+      ? 0
+      : dishes.reduce(
+          (total, dish) => total + Number(dish.price),
+          0
+        ) / totalDishes;
 
-    if (!dishName || !description || !course || !price) {
-      setError("Please complete all fields before adding the dish.");
-      return;
-    }
+  const filteredDishes = dishes.filter((dish) => {
+    const matchesSearch = dish.name
+      .toLowerCase()
+      .includes(searchText.trim().toLowerCase());
 
-    const newDish = {
-      name: dishName,
-      description: description,
-      course: course,
-      price: price,
-    };
+    const matchesCourse =
+      selectedCourse === "All" ||
+      dish.course === selectedCourse;
 
-    setDishes([...dishes, newDish]);
+    return matchesSearch && matchesCourse;
+  });
 
+  const resetForm = () => {
     setDishName("");
     setDescription("");
     setCourse("");
     setPrice("");
+    setError("");
+    setEditingId(null);
+  };
 
+  const validateForm = () => {
+    if (
+      !dishName.trim() ||
+      !description.trim() ||
+      !course ||
+      !price.trim()
+    ) {
+      setError("Please complete all fields before continuing.");
+      return false;
+    }
+
+    const numericPrice = Number(price);
+
+    if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+      setError("Please enter a valid price greater than zero.");
+      return false;
+    }
+
+    return true;
+  };
+
+  const addDish = () => {
+    setError("");
+    setSuccess("");
+
+    if (!validateForm()) {
+      return;
+    }
+
+    const newDish = {
+      id: Date.now().toString(),
+      name: dishName.trim(),
+      description: description.trim(),
+      course,
+      price: Number(price).toFixed(2),
+    };
+
+    setDishes((previousDishes) => [
+      ...previousDishes,
+      newDish,
+    ]);
+
+    resetForm();
     setSuccess("Dish added successfully!");
     setScreen("menu");
   };
 
-  const startEditing = (index) => {
-    const dish = dishes[index];
-
+  const startEditing = (dish) => {
     setDishName(dish.name);
     setDescription(dish.description);
     setCourse(dish.course);
-    setPrice(dish.price);
+    setPrice(String(dish.price));
 
-    setEditingIndex(index);
+    setEditingId(dish.id);
     setError("");
     setSuccess("");
     setScreen("edit");
@@ -85,220 +298,116 @@ export default function App() {
     setError("");
     setSuccess("");
 
-    if (!dishName || !description || !course || !price) {
-      setError("Please complete all fields before saving changes.");
+    if (!validateForm()) {
       return;
     }
 
-    const updatedDishes = [...dishes];
-
-    updatedDishes[editingIndex] = {
-      name: dishName,
-      description: description,
-      course: course,
-      price: price,
+    const updatedDish = {
+      id: editingId,
+      name: dishName.trim(),
+      description: description.trim(),
+      course,
+      price: Number(price).toFixed(2),
     };
 
-    setDishes(updatedDishes);
+    setDishes((previousDishes) =>
+      previousDishes.map((dish) =>
+        dish.id === editingId ? updatedDish : dish
+      )
+    );
 
-    setDishName("");
-    setDescription("");
-    setCourse("");
-    setPrice("");
-
-    setEditingIndex(null);
-
+    resetForm();
     setSuccess("Dish updated successfully!");
     setScreen("menu");
   };
 
-  const deleteDish = (indexToDelete) => {
-    const updatedDishes = dishes.filter(
-      (dish, index) => index !== indexToDelete
-    );
+  const deleteDish = (id) => {
+    Alert.alert(
+      "Delete Dish",
+      "Are you sure you want to delete this dish?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            setDishes((previousDishes) =>
+              previousDishes.filter((dish) => dish.id !== id)
+            );
 
-    setDishes(updatedDishes);
-    setSuccess("Dish deleted successfully!");
+            setSuccess("Dish deleted successfully!");
+          },
+        },
+      ]
+    );
   };
 
-  const filteredDishes = dishes.filter((dish) =>
-    dish.name.toLowerCase().includes(searchText.toLowerCase())
-  );
+  const clearFilters = () => {
+    setSearchText("");
+    setSelectedCourse("All");
+  };
 
-  // ADD DISH SCREEN
+  if (!isLoaded) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading your menu...</Text>
+      </View>
+    );
+  }
+
   if (screen === "add") {
     return (
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.formHeader}>
-          <Text style={styles.emoji}>🍽️</Text>
-
-          <Text style={styles.title}>Add New Dish</Text>
-
-          <Text style={styles.formSubtitle}>
-            Add a delicious new item to your menu.
-          </Text>
-        </View>
-
-        <View style={styles.formCard}>
-          <Text style={styles.label}>Dish Name</Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Cape Malay Curry"
-            placeholderTextColor="#999"
-            value={dishName}
-            onChangeText={setDishName}
-          />
-
-          <Text style={styles.label}>Description</Text>
-
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Describe the dish..."
-            placeholderTextColor="#999"
-            value={description}
-            onChangeText={setDescription}
-            multiline
-          />
-
-          <Text style={styles.label}>Course</Text>
-
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={course}
-              onValueChange={(itemValue) => setCourse(itemValue)}
-            >
-              <Picker.Item label="Select a course" value="" />
-              <Picker.Item label="Starter" value="Starter" />
-              <Picker.Item label="Main Course" value="Main Course" />
-              <Picker.Item label="Dessert" value="Dessert" />
-            </Picker>
-          </View>
-
-          <Text style={styles.label}>Price</Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. 120.00"
-            placeholderTextColor="#999"
-            value={price}
-            onChangeText={setPrice}
-            keyboardType="decimal-pad"
-          />
-
-          {error ? (
-            <Text style={styles.errorText}>{error}</Text>
-          ) : null}
-
-          <Pressable style={styles.button} onPress={addDish}>
-            <Text style={styles.buttonText}>Add Dish</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => setScreen("home")}
-          >
-            <Text style={styles.secondaryButtonText}>
-              ← Back to Home
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+      <DishForm
+        title="Add New Dish"
+        subtitle="Add a delicious new item to your menu."
+        icon="🍽️"
+        dishName={dishName}
+        setDishName={setDishName}
+        description={description}
+        setDescription={setDescription}
+        course={course}
+        setCourse={setCourse}
+        price={price}
+        setPrice={setPrice}
+        error={error}
+        buttonText="Add Dish"
+        onSubmit={addDish}
+        onCancel={() => {
+          resetForm();
+          setScreen("home");
+        }}
+      />
     );
   }
 
-  // EDIT DISH SCREEN
   if (screen === "edit") {
     return (
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.formHeader}>
-          <Text style={styles.emoji}>✏️</Text>
-
-          <Text style={styles.title}>Edit Dish</Text>
-
-          <Text style={styles.formSubtitle}>
-            Update the details of your menu item.
-          </Text>
-        </View>
-
-        <View style={styles.formCard}>
-          <Text style={styles.label}>Dish Name</Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Enter dish name"
-            placeholderTextColor="#999"
-            value={dishName}
-            onChangeText={setDishName}
-          />
-
-          <Text style={styles.label}>Description</Text>
-
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Enter dish description"
-            placeholderTextColor="#999"
-            value={description}
-            onChangeText={setDescription}
-            multiline
-          />
-
-          <Text style={styles.label}>Course</Text>
-
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={course}
-              onValueChange={(itemValue) => setCourse(itemValue)}
-            >
-              <Picker.Item label="Select a course" value="" />
-              <Picker.Item label="Starter" value="Starter" />
-              <Picker.Item label="Main Course" value="Main Course" />
-              <Picker.Item label="Dessert" value="Dessert" />
-            </Picker>
-          </View>
-
-          <Text style={styles.label}>Price</Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Enter price"
-            placeholderTextColor="#999"
-            value={price}
-            onChangeText={setPrice}
-            keyboardType="decimal-pad"
-          />
-
-          {error ? (
-            <Text style={styles.errorText}>{error}</Text>
-          ) : null}
-
-          <Pressable style={styles.button} onPress={updateDish}>
-            <Text style={styles.buttonText}>Save Changes</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => {
-              setEditingIndex(null);
-              setScreen("menu");
-            }}
-          >
-            <Text style={styles.secondaryButtonText}>
-              Cancel
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+      <DishForm
+        title="Edit Dish"
+        subtitle="Update the details of your menu item."
+        icon="✏️"
+        dishName={dishName}
+        setDishName={setDishName}
+        description={description}
+        setDescription={setDescription}
+        course={course}
+        setCourse={setCourse}
+        price={price}
+        setPrice={setPrice}
+        error={error}
+        buttonText="Save Changes"
+        onSubmit={updateDish}
+        onCancel={() => {
+          resetForm();
+          setScreen("menu");
+        }}
+      />
     );
   }
 
-  // MENU SCREEN
   if (screen === "menu") {
     return (
       <ScrollView
@@ -307,7 +416,6 @@ export default function App() {
       >
         <View style={styles.menuHeader}>
           <Text style={styles.emoji}>🍽️</Text>
-
           <Text style={styles.title}>My Menu</Text>
 
           <Text style={styles.menuSubtitle}>
@@ -322,29 +430,35 @@ export default function App() {
         <Text style={styles.statsTitle}>Menu Statistics</Text>
 
         <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statIcon}>📋</Text>
-            <Text style={styles.statNumber}>{totalDishes}</Text>
-            <Text style={styles.statLabel}>Total Dishes</Text>
-          </View>
+          <StatCard
+            icon="📋"
+            number={totalDishes}
+            label="Total Dishes"
+          />
 
-          <View style={styles.statCard}>
-            <Text style={styles.statIcon}>🥗</Text>
-            <Text style={styles.statNumber}>{starterCount}</Text>
-            <Text style={styles.statLabel}>Starters</Text>
-          </View>
+          <StatCard
+            icon="🥗"
+            number={starterCount}
+            label="Starters"
+          />
 
-          <View style={styles.statCard}>
-            <Text style={styles.statIcon}>🍛</Text>
-            <Text style={styles.statNumber}>{mainCourseCount}</Text>
-            <Text style={styles.statLabel}>Main Courses</Text>
-          </View>
+          <StatCard
+            icon="🍛"
+            number={mainCourseCount}
+            label="Main Courses"
+          />
 
-          <View style={styles.statCard}>
-            <Text style={styles.statIcon}>🍰</Text>
-            <Text style={styles.statNumber}>{dessertCount}</Text>
-            <Text style={styles.statLabel}>Desserts</Text>
-          </View>
+          <StatCard
+            icon="🍰"
+            number={dessertCount}
+            label="Desserts"
+          />
+
+          <StatCard
+            icon="💰"
+            number={`R${averagePrice.toFixed(2)}`}
+            label="Average Price"
+          />
         </View>
 
         <Text style={styles.sectionTitle}>Your Dishes</Text>
@@ -359,13 +473,33 @@ export default function App() {
           onChangeText={setSearchText}
         />
 
+        <Text style={styles.searchLabel}>Filter by Course</Text>
+
+        <View style={styles.pickerContainer}>
+          <Picker
+            selectedValue={selectedCourse}
+            onValueChange={setSelectedCourse}
+          >
+            <Picker.Item label="All Courses" value="All" />
+            <Picker.Item label="Starter" value="Starter" />
+            <Picker.Item label="Main Course" value="Main Course" />
+            <Picker.Item label="Dessert" value="Dessert" />
+          </Picker>
+        </View>
+
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={clearFilters}
+        >
+          <Text style={styles.secondaryButtonText}>
+            Clear Search and Filters
+          </Text>
+        </Pressable>
+
         {dishes.length === 0 ? (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyIcon}>🍽️</Text>
-
-            <Text style={styles.emptyTitle}>
-              No Dishes Yet
-            </Text>
+            <Text style={styles.emptyTitle}>No Dishes Yet</Text>
 
             <Text style={styles.emptyText}>
               Add your first dish to start building your menu.
@@ -374,75 +508,28 @@ export default function App() {
         ) : filteredDishes.length === 0 ? (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyIcon}>🔍</Text>
-
-            <Text style={styles.emptyTitle}>
-              No Results
-            </Text>
+            <Text style={styles.emptyTitle}>No Results</Text>
 
             <Text style={styles.emptyText}>
-              No dishes found matching your search.
+              No dishes found matching your search or selected course.
             </Text>
           </View>
         ) : (
-          filteredDishes.map((dish, index) => {
-            const originalIndex = dishes.indexOf(dish);
-
-            return (
-              <View style={styles.dishCard} key={index}>
-                <View style={styles.dishTopRow}>
-                  <Text style={styles.dishName}>
-                    {dish.name}
-                  </Text>
-
-                  <Text style={styles.price}>
-                    R{dish.price}
-                  </Text>
-                </View>
-
-                <View style={styles.courseBadge}>
-                  <Text style={styles.course}>
-                    {dish.course}
-                  </Text>
-                </View>
-
-                <Text style={styles.description}>
-                  {dish.description}
-                </Text>
-
-                <View style={styles.actionRow}>
-                  <Pressable
-                    style={styles.editButton}
-                    onPress={() =>
-                      startEditing(originalIndex)
-                    }
-                  >
-                    <Text style={styles.editButtonText}>
-                      ✏️ Edit
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.deleteButton}
-                    onPress={() =>
-                      deleteDish(originalIndex)
-                    }
-                  >
-                    <Text style={styles.deleteButtonText}>
-                      🗑️ Delete
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            );
-          })
+          filteredDishes.map((dish) => (
+            <DishCard
+              key={dish.id}
+              dish={dish}
+              onEdit={() => startEditing(dish)}
+              onDelete={() => deleteDish(dish.id)}
+            />
+          ))
         )}
 
         <Pressable
           style={styles.button}
           onPress={() => {
-            setError("");
+            resetForm();
             setSuccess("");
-            setSearchText("");
             setScreen("add");
           }}
         >
@@ -454,7 +541,8 @@ export default function App() {
         <Pressable
           style={styles.secondaryButton}
           onPress={() => {
-            setSearchText("");
+            clearFilters();
+            setSuccess("");
             setScreen("home");
           }}
         >
@@ -466,14 +554,17 @@ export default function App() {
     );
   }
 
-  // HOME SCREEN
   return (
     <ScrollView
       contentContainerStyle={styles.homeContainer}
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.homeCard}>
-        <Text style={styles.homeIcon}>👨‍🍳</Text>
+        <Image
+          source={require("./assets/chef_menu_logo.jpg")}
+          style={styles.homeLogo}
+          resizeMode="contain"
+        />
 
         <Text style={styles.homeTitle}>
           Chef's Menu Manager
@@ -497,7 +588,7 @@ export default function App() {
         <Pressable
           style={styles.button}
           onPress={() => {
-            setError("");
+            resetForm();
             setSuccess("");
             setScreen("add");
           }}
@@ -509,7 +600,10 @@ export default function App() {
 
         <Pressable
           style={styles.secondaryButton}
-          onPress={() => setScreen("menu")}
+          onPress={() => {
+            setSuccess("");
+            setScreen("menu");
+          }}
         >
           <Text style={styles.secondaryButtonText}>
             View My Menu
@@ -521,6 +615,19 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#fff8f0",
+  },
+
+  loadingText: {
+    fontSize: 18,
+    color: "#5D4037",
+    fontWeight: "bold",
+  },
+
   container: {
     flexGrow: 1,
     padding: 22,
@@ -542,9 +649,10 @@ const styles = StyleSheet.create({
     borderColor: "#eadfd5",
   },
 
-  homeIcon: {
-    fontSize: 55,
-    textAlign: "center",
+  homeLogo: {
+    width: 180,
+    height: 180,
+    alignSelf: "center",
     marginBottom: 15,
   },
 
@@ -740,7 +848,7 @@ const styles = StyleSheet.create({
   },
 
   statNumber: {
-    fontSize: 27,
+    fontSize: 24,
     fontWeight: "bold",
     color: "#8B4513",
     marginBottom: 3,
